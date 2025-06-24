@@ -52,7 +52,7 @@ pub async fn handle_vec<T: risotto_lib::state_store::store::StateStore>(
     Ok(())
 }
 
-// Your proposed new implementation using `BytesMut`.
+// proposed new implementation using `BytesMut`.
 pub async fn handle_bytesmut<T: risotto_lib::state_store::store::StateStore>(
     stream: &mut TcpStream,
     state: Option<risotto_lib::state::AsyncState<T>>,

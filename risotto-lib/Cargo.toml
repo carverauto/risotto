@@ -25,3 +25,7 @@ tracing = "0.1.41"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 tokio = { version = "1.42.0", features = ["full"] }
+
+[[bench]]
+name = "bmp_io"
+harness = false
