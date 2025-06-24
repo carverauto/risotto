@@ -21,3 +21,7 @@ rand = "0.9.0"
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["macros"] }
 tracing = "0.1.41"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+tokio = { version = "1.42.0", features = ["full"] }
