@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -177,33 +177,37 @@ pub fn bmp_io_benchmark(c: &mut Criterion) {
 
         // Benchmark the original Vec<u8> version
         group.bench_with_input(BenchmarkId::new("Vec<u8>", *size), size, |b, _| {
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_with_setup(
+            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_batched(
                 || {
-                    let rt = tokio::runtime::Handle::current();
-                    let port = rt.block_on(run_server_vec()).unwrap();
-                    (port, message.clone())
+                    let server_rt = tokio::runtime::Runtime::new().unwrap();
+                    let port = server_rt.block_on(run_server_vec()).unwrap();
+                    (server_rt, port, message.clone())
                 },
-                |(port, msg): (u16, BytesMut)| async move {
+                |(server_rt, port, msg): (tokio::runtime::Runtime, u16, BytesMut)| async move {
                     run_client(port, &msg, total_bytes_per_iter)
                         .await
                         .unwrap();
+                    drop(server_rt);
                 },
+                BatchSize::PerIteration,
             );
         });
 
         // Benchmark the new BytesMut version
         group.bench_with_input(BenchmarkId::new("BytesMut", *size), size, |b, _| {
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_with_setup(
+            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_batched(
                 || {
-                    let rt = tokio::runtime::Handle::current();
-                    let port = rt.block_on(run_server_bytesmut()).unwrap();
-                    (port, message.clone())
+                    let server_rt = tokio::runtime::Runtime::new().unwrap();
+                    let port = server_rt.block_on(run_server_bytesmut()).unwrap();
+                    (server_rt, port, message.clone())
                 },
-                |(port, msg): (u16, BytesMut)| async move {
+                |(server_rt, port, msg): (tokio::runtime::Runtime, u16, BytesMut)| async move {
                     run_client(port, &msg, total_bytes_per_iter)
                         .await
                         .unwrap();
+                    drop(server_rt);
                 },
+                BatchSize::PerIteration,
             );
         });
     }
