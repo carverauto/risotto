@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -85,17 +85,18 @@ pub async fn handle<T: StateStore>(
             anyhow::bail!(error_message);
         }
 
-        // Read the exact number of bytes found in the BMP message
-        let mut buffer = vec![0; packet_length];
+        // Read the exact number of bytes found in the BMP message without copying
+        let mut buffer = BytesMut::with_capacity(packet_length);
+        buffer.resize(packet_length, 0);
         match stream.read_exact(&mut buffer).await {
             Ok(_) => {
                 trace!(
                     "{}: Read {} bytes: {:02x?}",
                     socket.to_string(),
                     packet_length,
-                    buffer
+                    &buffer[..]
                 );
-                let mut buffer_bytes = Bytes::from(buffer);
+                let mut buffer_bytes = buffer.freeze();
 
                 // Process the BMP message
                 process_bmp_message(state.clone(), tx.clone(), socket, &mut buffer_bytes).await?;
