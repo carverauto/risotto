@@ -1,7 +1,4 @@
-use criterion::{
-    async_executor::tokio::TokioExecutor, criterion_group, criterion_main, BenchmarkId, Criterion,
-    Throughput,
-};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -115,19 +112,8 @@ fn create_bmp_termination_message(msg_len: u32) -> BytesMut {
     buf
 }
 
-// Generic server runner that takes a handler function
-async fn run_server<F, Fut>(handler: F) -> Result<u16>
-where
-    F: Fn(
-            &mut TcpStream,
-            Option<risotto_lib::state::AsyncState<MemoryStore>>,
-            mpsc::Sender<risotto_lib::update::Update>,
-        ) -> Fut
-        + Send
-        + 'static
-        + Copy,
-    Fut: std::future::Future<Output = Result<()>> + Send,
-{
+// Server runner using `handle_vec` as the request handler
+async fn run_server_vec() -> Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
     tokio::spawn(async move {
@@ -141,7 +127,27 @@ where
             while let Some(_) = rx.recv().await {}
         });
 
-        let _ = handler(&mut stream, Some(state), tx).await;
+        let _ = handle_vec(&mut stream, Some(state), tx).await;
+    });
+    Ok(port)
+}
+
+// Server runner using `handle_bytesmut` as the request handler
+async fn run_server_bytesmut() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let store = MemoryStore::new();
+        let state = new_state(store);
+        let (tx, mut rx) = mpsc::channel(1);
+
+        // Drain the receiver so the handler doesn't block
+        tokio::spawn(async move {
+            while let Some(_) = rx.recv().await {}
+        });
+
+        let _ = handle_bytesmut(&mut stream, Some(state), tx).await;
     });
     Ok(port)
 }
@@ -171,13 +177,13 @@ pub fn bmp_io_benchmark(c: &mut Criterion) {
 
         // Benchmark the original Vec<u8> version
         group.bench_with_input(BenchmarkId::new("Vec<u8>", *size), size, |b, _| {
-            b.to_async(TokioExecutor::new()).iter_with_setup(
+            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_with_setup(
                 || {
                     let rt = tokio::runtime::Handle::current();
-                    let port = rt.block_on(run_server(handle_vec)).unwrap();
+                    let port = rt.block_on(run_server_vec()).unwrap();
                     (port, message.clone())
                 },
-                |(port, msg)| async move {
+                |(port, msg): (u16, BytesMut)| async move {
                     run_client(port, &msg, total_bytes_per_iter)
                         .await
                         .unwrap();
@@ -187,13 +193,13 @@ pub fn bmp_io_benchmark(c: &mut Criterion) {
 
         // Benchmark the new BytesMut version
         group.bench_with_input(BenchmarkId::new("BytesMut", *size), size, |b, _| {
-            b.to_async(TokioExecutor::new()).iter_with_setup(
+            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter_with_setup(
                 || {
                     let rt = tokio::runtime::Handle::current();
-                    let port = rt.block_on(run_server(handle_bytesmut)).unwrap();
+                    let port = rt.block_on(run_server_bytesmut()).unwrap();
                     (port, message.clone())
                 },
-                |(port, msg)| async move {
+                |(port, msg): (u16, BytesMut)| async move {
                     run_client(port, &msg, total_bytes_per_iter)
                         .await
                         .unwrap();
